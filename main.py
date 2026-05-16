@@ -24,6 +24,7 @@ from modulos.mi_portafolio import (
     analizar_portafolio_real, analizar_opciones_inversion,
     comparar_opciones_yfinance, mostrar_recomendaciones,
     graficar_portafolio_cop, verificar_precios,
+    construir_retornos_para_analisis, comparar_mc_actual_vs_sugerido,
 )
 
 console = Console()
@@ -295,56 +296,77 @@ def main():
             graficar_portafolio(retornos_graf, portafolio["pesos"])
 
         elif opcion == "6":
-            capital = FloatPrompt.ask("\nCapital a invertir (USD)", default=10000.0)
-            anos = FloatPrompt.ask("¿Cuántos años simular?", default=1.0)
-            dias_sim = int(anos * 252)
-            n_sim = 1000
+            modo = Prompt.ask(
+                "\n¿Sobre qué portafolio correr Monte Carlo?",
+                choices=["r","e"],
+                default="r",
+                show_choices=False,
+            )
+            console.print("  [dim]r = mi portafolio real (actual vs sugerido)  |  e = portafolio de ejemplo[/dim]")
+            modo = Prompt.ask("Modo", choices=["r","e"], default="r")
 
-            console.print(f"\n[dim]Corriendo {n_sim:,} simulaciones para {dias_sim} días...[/dim]")
-            r_port = retornos[list(portafolio["pesos"].keys())].dropna() @ \
-                     list(portafolio["pesos"].values())
+            anos = FloatPrompt.ask("Años a simular", default=2.0)
 
-            trayectorias = simular_montecarlo(r_port, capital_inicial=capital,
-                                              dias=dias_sim, n_simulaciones=n_sim)
-            stats = estadisticas_montecarlo(trayectorias)
-
-            console.print(f"\n[bold]Resultados tras {dias_sim} días ({anos:.0f} año(s)):[/bold]")
-            console.print(f"  Escenario optimista  (P95): [green]${stats['p95']:>10,.0f}[/green]  ({stats['p95']/capital-1:+.1%})")
-            console.print(f"  Escenario probable   (P50): [cyan]${stats['p50']:>10,.0f}[/cyan]  ({stats['p50']/capital-1:+.1%})")
-            console.print(f"  Escenario pesimista  (P05): [red]${stats['p05']:>10,.0f}[/red]  ({stats['p05']/capital-1:+.1%})")
-            console.print(f"\n  Probabilidad de ganancia : [green]{stats['prob_ganancia']:.1%}[/green]")
-            console.print(f"  Probabilidad de perder >20%: [red]{stats['prob_perdida_20']:.1%}[/red]")
-
-            ver_grafica = Prompt.ask("\n¿Ver gráfica?", choices=["s","n"], default="s")
-            if ver_grafica == "s":
-                graficar_montecarlo(trayectorias, stats)
+            if modo == "r":
+                mi_port = cargar_portafolio()
+                capital = float(sum(a["valor_cop"] for a in mi_port["activos"]))
+                console.print(f"\n[dim]Construyendo retornos del portafolio real ({portafolio['periodo']})...[/dim]")
+                ret_real, pw_act, pw_sug = construir_retornos_para_analisis(mi_port, portafolio["periodo"])
+                comparar_mc_actual_vs_sugerido(ret_real, pw_act, pw_sug, capital=capital, anos=anos)
+            else:
+                capital = FloatPrompt.ask("Capital inicial (USD)", default=10000.0)
+                dias_sim = int(anos * 252)
+                r_port = retornos[list(portafolio["pesos"].keys())].dropna() @ \
+                         list(portafolio["pesos"].values())
+                trayectorias = simular_montecarlo(r_port, capital_inicial=capital,
+                                                  dias=dias_sim, n_simulaciones=1000)
+                stats = estadisticas_montecarlo(trayectorias)
+                console.print(f"\n  P95: [green]${stats['p95']:,.0f}[/green]  P50: [cyan]${stats['p50']:,.0f}[/cyan]  P05: [red]${stats['p05']:,.0f}[/red]")
+                console.print(f"  Prob. ganancia: [green]{stats['prob_ganancia']:.1%}[/green]")
+                ver_grafica = Prompt.ask("Ver grafica?", choices=["s","n"], default="s")
+                if ver_grafica == "s":
+                    graficar_montecarlo(trayectorias, stats)
 
         elif opcion == "7":
-            console.print("\n[dim]Calculando portafolio óptimo (esto toma unos segundos)...[/dim]")
-            optimo = optimizar_sharpe(retornos)
-            if not optimo["exito"]:
-                console.print("[red]El optimizador no convergió. Intenta con más datos (período más largo).[/red]")
+            modo = Prompt.ask(
+                "\n¿Optimizar qué portafolio?",
+                choices=["r","e"],
+                default="r",
+                show_choices=False,
+            )
+            console.print("  [dim]r = mi portafolio real  |  e = portafolio de ejemplo[/dim]")
+            modo = Prompt.ask("Modo", choices=["r","e"], default="r")
+
+            if modo == "r":
+                mi_port = cargar_portafolio()
+                console.print(f"\n[dim]Descargando datos ({portafolio['periodo']}) para optimizar...[/dim]")
+                ret_real, pw_act, _ = construir_retornos_para_analisis(mi_port, portafolio["periodo"])
+                optimo = optimizar_sharpe(ret_real)
             else:
-                console.print("\n[bold cyan]Portafolio óptimo encontrado:[/bold cyan]")
-                console.print(f"  Sharpe Ratio : [green]{optimo['sharpe']:.2f}[/green]")
-                console.print(f"  Retorno anual: [green]{optimo['retorno_anual']:+.2%}[/green]")
-                console.print(f"  Volatilidad  : {optimo['volatilidad_anual']:.2%}\n")
-                console.print("[bold]Pesos sugeridos:[/bold]")
-                for ticker, peso in sorted(optimo["pesos"].items(), key=lambda x: -x[1]):
-                    barra = "█" * int(peso * 40)
-                    console.print(f"  {ticker:6} {peso:5.1%}  [cyan]{barra}[/cyan]")
+                optimo = optimizar_sharpe(retornos)
 
-                ver_frontera = Prompt.ask("\n¿Ver frontera eficiente?", choices=["s","n"], default="s")
-                if ver_frontera == "s":
-                    console.print("[dim]Generando 5,000 portafolios aleatorios...[/dim]")
-                    frontera = frontera_eficiente(retornos)
-                    graficar_frontera(frontera, portafolio["pesos"], optimo, retornos)
+            if not optimo["exito"]:
+                console.print("[red]El optimizador no convergió.[/red]")
+            else:
+                console.print(f"\n[bold cyan]Portafolio optimo:[/bold cyan]  Sharpe [green]{optimo['sharpe']:.2f}[/green]  "
+                              f"Retorno [green]{optimo['retorno_anual']:+.2%}[/green]  "
+                              f"Vol {optimo['volatilidad_anual']:.2%}\n")
+                for id_act, peso in sorted(optimo["pesos"].items(), key=lambda x: -x[1]):
+                    if peso > 0.001:
+                        barra = "|" * int(peso * 40)
+                        console.print(f"  {id_act:20} {peso:5.1%}  [cyan]{barra}[/cyan]")
 
-                aplicar = Prompt.ask("¿Aplicar pesos óptimos al portafolio?", choices=["s","n"], default="n")
-                if aplicar == "s":
-                    portafolio["pesos"] = optimo["pesos"]
-                    portafolio["tickers"] = list(optimo["pesos"].keys())
-                    console.print("[green]Pesos actualizados al óptimo.[/green]")
+                if modo == "r":
+                    ver_frontera = Prompt.ask("\nVer frontera eficiente?", choices=["s","n"], default="s")
+                    if ver_frontera == "s":
+                        console.print("[dim]Generando 5,000 portafolios aleatorios...[/dim]")
+                        frontera = frontera_eficiente(ret_real)
+                        graficar_frontera(frontera, pw_act, optimo, ret_real)
+                else:
+                    ver_frontera = Prompt.ask("\nVer frontera eficiente?", choices=["s","n"], default="s")
+                    if ver_frontera == "s":
+                        frontera = frontera_eficiente(retornos)
+                        graficar_frontera(frontera, portafolio["pesos"], optimo, retornos)
 
         elif opcion == "8":
             periodo = Prompt.ask("Período", choices=["1y","2y","5y","10y","max"], default="2y")

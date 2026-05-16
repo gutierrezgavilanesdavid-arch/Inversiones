@@ -522,3 +522,193 @@ def graficar_portafolio_cop(portafolio: dict):
 
     plt.tight_layout()
     plt.show()
+
+
+# ─── Portafolio sugerido y retornos para MC/Optimizer ────────────────────────
+
+PORTAFOLIO_SUGERIDO = {
+    "nombre": "Portafolio Sugerido",
+    "pesos": {
+        "FONDO_MAYOR": 0.32,
+        "FONDO_MODERADO": 0.00,
+        "BTC": 0.04,
+        "EIMICO": 0.18,
+        "IUITCO": 0.28,
+        "IUESCO": 0.10,
+        "GEB": 0.08,
+    },
+    "descripcion": "30% AVC Mayor, 0% AVC Moderado (reubicar), 4% BTC, 18% EM, 28% S&P Tech, 10% Energy, 8% GEB",
+}
+
+
+def construir_retornos_para_analisis(portafolio: dict, periodo: str = "2y") -> tuple[pd.DataFrame, dict, dict]:
+    """
+    Descarga retornos históricos de Yahoo Finance para todos los activos
+    del portafolio actual Y del portafolio sugerido.
+
+    Retorna:
+        retornos_df  : DataFrame con todos los activos combinados
+        pesos_actual : pesos del portafolio actual
+        pesos_sugeri : pesos del portafolio sugerido
+    """
+    # Activos del portafolio actual con pesos
+    total = valor_total_cop(portafolio)
+    pesos_actual = {a["id"]: a["valor_cop"] / total for a in portafolio["activos"]}
+
+    # Pesos del sugerido (solo los que existen en retornos)
+    pesos_sugeri = PORTAFOLIO_SUGERIDO["pesos"]
+
+    # Mapa id → ticker (activos del portafolio real)
+    mapa_ticker = {a["id"]: a.get("ticker_yfinance") for a in portafolio["activos"]}
+
+    # Agregar activos del sugerido que no están en el portafolio actual
+    ticker_extra = {
+        "IUITCO": "XLK",
+        "IUESCO": "XLE",
+        "GEB":    None,   # sin ticker Yahoo
+    }
+    for id_act, ticker in ticker_extra.items():
+        if id_act not in mapa_ticker:
+            mapa_ticker[id_act] = ticker
+
+    # Descargar los que tienen ticker
+    tickers_reales = list({v for v in mapa_ticker.values() if v})
+    retornos_dict: dict[str, pd.Series] = {}
+
+    if tickers_reales:
+        precios_raw = descargar_precios(tickers_reales, periodo)
+        retornos_raw = calcular_retornos_diarios(precios_raw)
+        # Invertir mapa para ticker → id
+        inv_mapa = {v: k for k, v in mapa_ticker.items() if v}
+        for ticker_col in retornos_raw.columns:
+            id_act = inv_mapa.get(ticker_col, ticker_col)
+            retornos_dict[id_act] = retornos_raw[ticker_col]
+
+    # Fondos sin ticker → serie sintética
+    fondos_sinteticos = {
+        a["id"]: (a["rentabilidad_ea"], a["volatilidad_estimada_anual"])
+        for a in portafolio["activos"]
+        if not a.get("ticker_yfinance")
+    }
+    dias_p = {"1y": 252, "2y": 504, "5y": 1260}.get(periodo, 504)
+    for id_act, (ea, vol) in fondos_sinteticos.items():
+        serie = generar_serie_sintetica(ea, vol, dias=dias_p, semilla=hash(id_act) % 100)
+        retornos_dict[id_act] = np.log(serie / serie.shift(1)).dropna()
+
+    # GEB sin ticker → no incluir en optimización
+    retornos_dict.pop("GEB", None)
+    pesos_sugeri_filtrado = {k: v for k, v in pesos_sugeri.items() if k in retornos_dict}
+    # Renormalizar pesos sugeridos a los activos disponibles
+    suma = sum(pesos_sugeri_filtrado.values())
+    if suma > 0:
+        pesos_sugeri_filtrado = {k: v / suma for k, v in pesos_sugeri_filtrado.items()}
+    # Renormalizar pesos actuales
+    pesos_actual_filtrado = {k: v for k, v in pesos_actual.items() if k in retornos_dict}
+    suma2 = sum(pesos_actual_filtrado.values())
+    if suma2 > 0:
+        pesos_actual_filtrado = {k: v / suma2 for k, v in pesos_actual_filtrado.items()}
+
+    retornos_df = pd.DataFrame(retornos_dict).dropna(how="all")
+    return retornos_df, pesos_actual_filtrado, pesos_sugeri_filtrado
+
+
+def comparar_mc_actual_vs_sugerido(
+    retornos: pd.DataFrame,
+    pesos_actual: dict,
+    pesos_sugeri: dict,
+    capital: float = 1_422_444,
+    anos: float = 2.0,
+):
+    """
+    Corre Monte Carlo para portafolio actual Y sugerido, muestra comparación.
+    """
+    from modulos.montecarlo import simular_montecarlo, estadisticas_montecarlo
+    import matplotlib.pyplot as plt
+    import matplotlib.gridspec as gridspec
+
+    dias = int(anos * 252)
+    activos = list(retornos.columns)
+
+    w_act = np.array([pesos_actual.get(a, 0) for a in activos])
+    w_sug = np.array([pesos_sugeri.get(a, 0) for a in activos])
+
+    r_actual  = (retornos @ w_act).dropna()
+    r_sugeri  = (retornos @ w_sug).dropna()
+
+    tray_act  = simular_montecarlo(r_actual, capital, dias, 1000, semilla=42)
+    tray_sug  = simular_montecarlo(r_sugeri, capital, dias, 1000, semilla=42)
+    st_act    = estadisticas_montecarlo(tray_act)
+    st_sug    = estadisticas_montecarlo(tray_sug)
+
+    # Tabla comparativa en terminal
+    console.print()
+    tabla = Table(title=f"Monte Carlo - Actual vs Sugerido ({anos:.0f} ano(s), ${capital:,.0f} COP)",
+                  box=box.ROUNDED, border_style="cyan", show_lines=True)
+    tabla.add_column("Escenario",          min_width=22, style="bold")
+    tabla.add_column("Pesimista (P5)",     justify="right", min_width=16)
+    tabla.add_column("Probable (P50)",     justify="right", min_width=16)
+    tabla.add_column("Optimista (P95)",    justify="right", min_width=16)
+    tabla.add_column("Prob. ganancia",     justify="center", min_width=14)
+    tabla.add_column("Prob. perder >20%",  justify="center", min_width=16)
+
+    for nombre, st in [("Portafolio actual", st_act), ("Portafolio sugerido", st_sug)]:
+        color = "cyan" if "actual" in nombre else "green"
+        tabla.add_row(
+            f"[{color}]{nombre}[/{color}]",
+            Text(f"${st['p05']:>12,.0f}  ({st['p05']/capital-1:+.1%})", style="red"),
+            Text(f"${st['p50']:>12,.0f}  ({st['p50']/capital-1:+.1%})", style=color),
+            Text(f"${st['p95']:>12,.0f}  ({st['p95']/capital-1:+.1%})", style="green"),
+            Text(f"{st['prob_ganancia']:.1%}", style="green"),
+            Text(f"{st['prob_perdida_20']:.1%}", style="red"),
+        )
+    console.print(tabla)
+
+    # Gráfica comparativa
+    fig = plt.figure(figsize=(14, 6), facecolor="#0f1117")
+    fig.suptitle(f"Monte Carlo: Portafolio Actual vs Sugerido  ({dias} dias, ${capital/1e6:.2f}M COP)",
+                 color="white", fontsize=13, fontweight="bold")
+    gs = gridspec.GridSpec(1, 2, figure=fig, wspace=0.3)
+    eje = np.arange(dias + 1)
+
+    for idx, (nombre, tray, st, color) in enumerate([
+        ("Actual",   tray_act, st_act, "#00d4ff"),
+        ("Sugerido", tray_sug, st_sug, "#00ff88"),
+    ]):
+        ax = fig.add_subplot(gs[idx])
+        ax.set_facecolor("#1a1d27")
+        ax.tick_params(colors="gray")
+        ax.spines[:].set_color("#2e3148")
+
+        p05 = np.percentile(tray, 5,  axis=1)
+        p50 = np.percentile(tray, 50, axis=1)
+        p95 = np.percentile(tray, 95, axis=1)
+
+        n_show = min(150, tray.shape[1])
+        for i in np.random.choice(tray.shape[1], n_show, replace=False):
+            ax.plot(eje, tray[:, i], alpha=0.03, linewidth=0.5,
+                    color="#ff4444" if tray[-1, i] < capital else color)
+
+        ax.fill_between(eje, p05, p95, alpha=0.15, color=color)
+        ax.fill_between(eje, np.percentile(tray, 25, axis=1),
+                        np.percentile(tray, 75, axis=1), alpha=0.25, color=color)
+        ax.plot(eje, p50, color=color, linewidth=2,
+                label=f"Mediana: ${p50[-1]:,.0f}")
+        ax.plot(eje, p05, color="#ff6666", linewidth=1, linestyle="--",
+                label=f"P5: ${p05[-1]:,.0f}")
+        ax.plot(eje, p95, color="#66ff88", linewidth=1, linestyle="--",
+                label=f"P95: ${p95[-1]:,.0f}")
+        ax.axhline(capital, color="#888888", linewidth=0.8, linestyle=":")
+
+        w_titulo = w_act if idx == 0 else w_sug
+        ax.set_title(f"Portafolio {nombre}  |  Sharpe {sharpe_ratio((retornos @ w_titulo).dropna()):.2f}",
+                     color="white", fontsize=10)
+        ax.set_xlabel("Dias", color="gray", fontsize=9)
+        ax.set_ylabel("Valor COP", color="gray", fontsize=9)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"${x/1e6:.1f}M"))
+        ax.legend(facecolor="#1a1d27", labelcolor="white", fontsize=8)
+        for lbl in ax.get_xticklabels() + ax.get_yticklabels():
+            lbl.set_color("gray")
+
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.show()
+    return st_act, st_sug
