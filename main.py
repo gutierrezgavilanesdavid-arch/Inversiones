@@ -16,6 +16,7 @@ sys.path.insert(0, ".")
 
 from modulos.datos import descargar_precios, calcular_retornos_diarios, resumen_datos
 from modulos.metricas import analizar_portafolio
+from modulos.graficas import graficar_portafolio
 
 console = Console()
 
@@ -146,9 +147,10 @@ def menu_principal() -> str:
     console.print("  [cyan]2[/cyan] Cambiar los pesos del portafolio")
     console.print("  [cyan]3[/cyan] Agregar o quitar activos")
     console.print("  [cyan]4[/cyan] Ver correlaciones")
-    console.print("  [cyan]5[/cyan] Cambiar período de análisis")
+    console.print("  [cyan]5[/cyan] Ver gráficas (evolución, drawdown, retornos)")
+    console.print("  [cyan]6[/cyan] Cambiar período de análisis")
     console.print("  [cyan]q[/cyan] Salir")
-    return Prompt.ask("\nOpción", choices=["1","2","3","4","5","q"], default="1")
+    return Prompt.ask("\nOpción", choices=["1","2","3","4","5","6","q"], default="1")
 
 
 def pedir_nuevos_pesos(tickers: list) -> dict:
@@ -233,6 +235,17 @@ def main():
             mostrar_correlaciones(analisis)
 
         elif opcion == "5":
+            console.print("\n[dim]Generando gráficas... se abrirá una ventana.[/dim]")
+            tickers_con_spy = list(portafolio["pesos"].keys())
+            if "SPY" not in tickers_con_spy:
+                tickers_con_spy.append("SPY")
+                precios_graf = descargar_precios(tickers_con_spy, portafolio["periodo"])
+                retornos_graf = calcular_retornos_diarios(precios_graf)
+            else:
+                retornos_graf = retornos
+            graficar_portafolio(retornos_graf, portafolio["pesos"])
+
+        elif opcion == "6":
             periodo = Prompt.ask("Período", choices=["1y","2y","5y","10y","max"], default="2y")
             portafolio["periodo"] = periodo
             console.print(f"[green]Período cambiado a {periodo}.[/green]")
