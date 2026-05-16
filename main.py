@@ -18,6 +18,7 @@ from modulos.datos import descargar_precios, calcular_retornos_diarios, resumen_
 from modulos.metricas import analizar_portafolio
 from modulos.graficas import graficar_portafolio
 from modulos.montecarlo import simular_montecarlo, estadisticas_montecarlo, graficar_montecarlo
+from modulos.optimizador import optimizar_sharpe, frontera_eficiente, graficar_frontera
 
 console = Console()
 
@@ -150,9 +151,10 @@ def menu_principal() -> str:
     console.print("  [cyan]4[/cyan] Ver correlaciones")
     console.print("  [cyan]5[/cyan] Ver gráficas (evolución, drawdown, retornos)")
     console.print("  [cyan]6[/cyan] Simulación Monte Carlo")
-    console.print("  [cyan]7[/cyan] Cambiar período de análisis")
+    console.print("  [cyan]7[/cyan] Optimizar portafolio (Markowitz)")
+    console.print("  [cyan]8[/cyan] Cambiar período de análisis")
     console.print("  [cyan]q[/cyan] Salir")
-    return Prompt.ask("\nOpción", choices=["1","2","3","4","5","6","7","q"], default="1")
+    return Prompt.ask("\nOpción", choices=["1","2","3","4","5","6","7","8","q"], default="1")
 
 
 def pedir_nuevos_pesos(tickers: list) -> dict:
@@ -273,6 +275,33 @@ def main():
                 graficar_montecarlo(trayectorias, stats)
 
         elif opcion == "7":
+            console.print("\n[dim]Calculando portafolio óptimo (esto toma unos segundos)...[/dim]")
+            optimo = optimizar_sharpe(retornos)
+            if not optimo["exito"]:
+                console.print("[red]El optimizador no convergió. Intenta con más datos (período más largo).[/red]")
+            else:
+                console.print("\n[bold cyan]Portafolio óptimo encontrado:[/bold cyan]")
+                console.print(f"  Sharpe Ratio : [green]{optimo['sharpe']:.2f}[/green]")
+                console.print(f"  Retorno anual: [green]{optimo['retorno_anual']:+.2%}[/green]")
+                console.print(f"  Volatilidad  : {optimo['volatilidad_anual']:.2%}\n")
+                console.print("[bold]Pesos sugeridos:[/bold]")
+                for ticker, peso in sorted(optimo["pesos"].items(), key=lambda x: -x[1]):
+                    barra = "█" * int(peso * 40)
+                    console.print(f"  {ticker:6} {peso:5.1%}  [cyan]{barra}[/cyan]")
+
+                ver_frontera = Prompt.ask("\n¿Ver frontera eficiente?", choices=["s","n"], default="s")
+                if ver_frontera == "s":
+                    console.print("[dim]Generando 5,000 portafolios aleatorios...[/dim]")
+                    frontera = frontera_eficiente(retornos)
+                    graficar_frontera(frontera, portafolio["pesos"], optimo, retornos)
+
+                aplicar = Prompt.ask("¿Aplicar pesos óptimos al portafolio?", choices=["s","n"], default="n")
+                if aplicar == "s":
+                    portafolio["pesos"] = optimo["pesos"]
+                    portafolio["tickers"] = list(optimo["pesos"].keys())
+                    console.print("[green]Pesos actualizados al óptimo.[/green]")
+
+        elif opcion == "8":
             periodo = Prompt.ask("Período", choices=["1y","2y","5y","10y","max"], default="2y")
             portafolio["periodo"] = periodo
             console.print(f"[green]Período cambiado a {periodo}.[/green]")
