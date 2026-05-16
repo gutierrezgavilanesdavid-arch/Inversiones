@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# Datos descargados (se regeneran solos)
+data/*.csv
+data/*.json
+
+# VS Code
+.vscode/settings.json
+
+# Sistema
+.DS_Store
+Thumbs.db
