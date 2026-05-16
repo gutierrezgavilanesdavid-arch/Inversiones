@@ -19,6 +19,12 @@ from modulos.metricas import analizar_portafolio
 from modulos.graficas import graficar_portafolio
 from modulos.montecarlo import simular_montecarlo, estadisticas_montecarlo, graficar_montecarlo
 from modulos.optimizador import optimizar_sharpe, frontera_eficiente, graficar_frontera
+from modulos.mi_portafolio import (
+    cargar_portafolio, mostrar_portafolio_actual,
+    analizar_portafolio_real, analizar_opciones_inversion,
+    comparar_opciones_yfinance, mostrar_recomendaciones,
+    graficar_portafolio_cop, verificar_precios,
+)
 
 console = Console()
 
@@ -145,8 +151,12 @@ def mostrar_correlaciones(analisis: dict):
 
 def menu_principal() -> str:
     console.print("\n[bold]¿Qué quieres hacer?[/bold]")
-    console.print("  [cyan]1[/cyan] Ver análisis completo del portafolio actual")
-    console.print("  [cyan]2[/cyan] Cambiar los pesos del portafolio")
+    console.print("  [bold yellow]── Mi portafolio real ──[/bold yellow]")
+    console.print("  [yellow]p[/yellow] Ver mi portafolio (TRii/AVC/Binance)")
+    console.print("  [yellow]i[/yellow] Analizar opciones de inversión ($207,945 disponibles)")
+    console.print("  [bold cyan]── Portafolio de análisis ──[/bold cyan]")
+    console.print("  [cyan]1[/cyan] Ver análisis completo del portafolio")
+    console.print("  [cyan]2[/cyan] Cambiar los pesos")
     console.print("  [cyan]3[/cyan] Agregar o quitar activos")
     console.print("  [cyan]4[/cyan] Ver correlaciones")
     console.print("  [cyan]5[/cyan] Ver gráficas (evolución, drawdown, retornos)")
@@ -154,7 +164,7 @@ def menu_principal() -> str:
     console.print("  [cyan]7[/cyan] Optimizar portafolio (Markowitz)")
     console.print("  [cyan]8[/cyan] Cambiar período de análisis")
     console.print("  [cyan]q[/cyan] Salir")
-    return Prompt.ask("\nOpción", choices=["1","2","3","4","5","6","7","8","q"], default="1")
+    return Prompt.ask("\nOpción", choices=["1","2","3","4","5","6","7","8","p","i","q"], default="p")
 
 
 def pedir_nuevos_pesos(tickers: list) -> dict:
@@ -214,6 +224,41 @@ def main():
         if opcion == "q":
             console.print("\n[bold cyan]¡Hasta pronto![/bold cyan]")
             break
+
+        elif opcion == "p":
+            mi_port = cargar_portafolio()
+            mostrar_portafolio_actual(mi_port)
+            submenu = Prompt.ask(
+                "\n¿Qué quieres ver?",
+                choices=["1","2","3","n"],
+                default="1",
+                show_choices=False,
+                show_default=False,
+            )
+            console.print("  [dim]1=Métricas históricas  2=Gráfica composición  3=Recomendaciones  n=Volver[/dim]")
+            submenu = Prompt.ask("Opción", choices=["1","2","3","n"], default="1")
+            if submenu == "1":
+                analizar_portafolio_real(mi_port, portafolio["periodo"])
+            elif submenu == "2":
+                graficar_portafolio_cop(mi_port)
+            elif submenu == "3":
+                mostrar_recomendaciones(mi_port)
+            continue
+
+        elif opcion == "i":
+            mi_port = cargar_portafolio()
+            verificar_precios(mi_port)
+            opciones = analizar_opciones_inversion(mi_port)
+            comparar = Prompt.ask(
+                "\n¿Comparar rendimiento histórico (opciones + alternativas sugeridas)?",
+                choices=["s","n"], default="s"
+            )
+            if comparar == "s":
+                comparar_opciones_yfinance(mi_port, portafolio["periodo"])
+            recomendar = Prompt.ask("\n¿Ver recomendaciones?", choices=["s","n"], default="s")
+            if recomendar == "s":
+                mostrar_recomendaciones(mi_port)
+            continue
 
         elif opcion == "1":
             analisis = analizar_portafolio(retornos, portafolio["pesos"], precios)

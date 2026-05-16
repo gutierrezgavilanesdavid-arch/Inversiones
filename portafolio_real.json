@@ -1,0 +1,175 @@
+{
+  "nombre": "Portafolio David — TRii / AVC / Binance",
+  "moneda_base": "COP",
+
+  "activos": [
+    {
+      "id": "FONDO_MAYOR",
+      "nombre_corto": "AVC Mayor Riesgo",
+      "nombre_largo": "Fondo Mayor Riesgo — Acciones y Valores Colombia",
+      "valor_cop": 763582,
+      "tipo": "fondo_local",
+      "rentabilidad_ea": 0.1641,
+      "volatilidad_estimada_anual": 0.12,
+      "ticker_yfinance": null
+    },
+    {
+      "id": "FONDO_MODERADO",
+      "nombre_corto": "AVC Moderado",
+      "nombre_largo": "Fondo Moderado — Acciones y Valores Colombia",
+      "valor_cop": 373862,
+      "tipo": "fondo_local",
+      "rentabilidad_ea": 0.1443,
+      "volatilidad_estimada_anual": 0.07,
+      "ticker_yfinance": null
+    },
+    {
+      "id": "BTC",
+      "nombre_corto": "Bitcoin (BTC)",
+      "nombre_largo": "Bitcoin — Binance",
+      "valor_cop": 80000,
+      "cantidad_unidades": 0.00028221,
+      "tipo": "crypto",
+      "ticker_yfinance": "BTC-USD"
+    },
+    {
+      "id": "EIMICO",
+      "nombre_corto": "EIMICO | MSCI EM IMI",
+      "nombre_largo": "Core MSCI EM IMI UCITS ETF",
+      "valor_cop": 205000,
+      "tipo": "etf",
+      "ticker_yfinance": "IEMG",
+      "nota": "Proxy: IEMG (NYSE) — misma exposicion Emerging Markets"
+    }
+  ],
+
+  "disponible_cop": 207945,
+  "comision_por_transaccion_cop": 14500,
+
+  "opciones_inversion": [
+    {
+      "id": "RBOTCO",
+      "nombre_corto": "RBOTCO | iShares Robot.",
+      "nombre_largo": "iShares Automation & Robotics UCITS ETF",
+      "precio_cop": 77020,
+      "tipo": "etf",
+      "ticker_yfinance": "BOTZ",
+      "nota": "Proxy: BOTZ (Global X Robotics & AI ETF)"
+    },
+    {
+      "id": "IUITCO",
+      "nombre_corto": "IUITCO | S&P500 Tech",
+      "nombre_largo": "iShares S&P 500 IT Sector UCITS ETF",
+      "precio_cop": 185440,
+      "tipo": "etf",
+      "ticker_yfinance": "XLK",
+      "nota": "Proxy: XLK (S&P 500 Tech Sector ETF)"
+    },
+    {
+      "id": "IUESCO",
+      "nombre_corto": "IUESCO | S&P500 Energy",
+      "nombre_largo": "iShares S&P 500 Energy Sector UCITS ETF",
+      "precio_cop": 47000,
+      "tipo": "etf",
+      "ticker_yfinance": "XLE",
+      "nota": "Proxy: XLE (S&P 500 Energy Sector ETF)"
+    },
+    {
+      "id": "ICHNCO",
+      "nombre_corto": "ICHNCO | MSCI China",
+      "nombre_largo": "iShares MSCI China UCITS ETF",
+      "precio_cop": 25500,
+      "tipo": "etf",
+      "ticker_yfinance": "MCHI",
+      "nota": "Proxy: MCHI (iShares MSCI China ETF)"
+    },
+    {
+      "id": "GEB",
+      "nombre_corto": "GEB | Grupo E. Bogota",
+      "nombre_largo": "GEB — Grupo Energia de Bogota",
+      "precio_cop": 2950,
+      "tipo": "accion_local",
+      "ticker_yfinance": null,
+      "nota": "Accion BVC — sin datos en yfinance"
+    },
+    {
+      "id": "4BRZCO",
+      "nombre_corto": "4BRZCO | MSCI Brazil",
+      "nombre_largo": "iShares MSCI Brazil UCITS ETF",
+      "precio_cop": 203100,
+      "tipo": "etf",
+      "ticker_yfinance": "EWZ",
+      "nota": "Proxy: EWZ. Fuera de presupuesto actual ($203,100 + $14,500 = $217,600)"
+    },
+    {
+      "id": "COLBUNCO",
+      "nombre_corto": "COLBUNCO | Colbun SA",
+      "nombre_largo": "Colbun S.A. — Electrica chilena",
+      "precio_cop": null,
+      "tipo": "accion_extranjera",
+      "ticker_yfinance": "COLBUN.SN",
+      "nota": "Bolsa de Santiago"
+    },
+    {
+      "id": "AMDVASCCO",
+      "nombre_corto": "AMDVASCCO | AMD?",
+      "nombre_largo": "AMD Advanced Micro Devices (confirmar ticker TRii)",
+      "precio_cop": null,
+      "tipo": "accion",
+      "ticker_yfinance": "AMD",
+      "nota": "Confirmar si es AMD semiconductores u otra empresa en TRii"
+    },
+    {
+      "id": "PFGRUPOARG",
+      "nombre_corto": "PFGRUPOARG | Gpo.Argos Pref",
+      "nombre_largo": "Grupo Argos — Accion Preferencial",
+      "precio_cop": null,
+      "tipo": "accion_local",
+      "ticker_yfinance": null,
+      "nota": "Accion preferencial BVC — sin datos en yfinance"
+    }
+  ],
+
+  "alternativas_sugeridas": [
+    {
+      "id": "QQQ",
+      "nombre_corto": "QQQ | Nasdaq-100",
+      "nombre_largo": "Invesco QQQ Trust — Nasdaq 100 ETF",
+      "tipo": "etf",
+      "ticker_yfinance": "QQQ",
+      "razon": "Exposicion tech/growth mas diversificada que XLK puro. Muy liquido."
+    },
+    {
+      "id": "VTI",
+      "nombre_corto": "VTI | Total US Market",
+      "nombre_largo": "Vanguard Total Stock Market ETF",
+      "tipo": "etf",
+      "ticker_yfinance": "VTI",
+      "razon": "Diversificacion total mercado USA. Comisiones muy bajas (0.03%)."
+    },
+    {
+      "id": "SCHD",
+      "nombre_corto": "SCHD | Dividendos USA",
+      "nombre_largo": "Schwab US Dividend Equity ETF",
+      "tipo": "etf",
+      "ticker_yfinance": "SCHD",
+      "razon": "ETF de dividendos crecientes. Reduce volatilidad y genera flujo de caja."
+    },
+    {
+      "id": "GLD",
+      "nombre_corto": "GLD | Oro",
+      "nombre_largo": "SPDR Gold Shares ETF",
+      "tipo": "etf",
+      "ticker_yfinance": "GLD",
+      "razon": "Cobertura contra inflacion y devaluacion del COP. Baja correlacion con acciones."
+    },
+    {
+      "id": "NVDA",
+      "nombre_corto": "NVDA | Nvidia",
+      "nombre_largo": "Nvidia Corporation",
+      "tipo": "accion",
+      "ticker_yfinance": "NVDA",
+      "razon": "Lider en chips IA. Alta volatilidad pero retornos excepcionales los ultimos 2 anos."
+    }
+  ]
+}
