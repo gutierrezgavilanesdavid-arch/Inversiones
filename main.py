@@ -17,6 +17,7 @@ sys.path.insert(0, ".")
 from modulos.datos import descargar_precios, calcular_retornos_diarios, resumen_datos
 from modulos.metricas import analizar_portafolio
 from modulos.graficas import graficar_portafolio
+from modulos.montecarlo import simular_montecarlo, estadisticas_montecarlo, graficar_montecarlo
 
 console = Console()
 
@@ -148,9 +149,10 @@ def menu_principal() -> str:
     console.print("  [cyan]3[/cyan] Agregar o quitar activos")
     console.print("  [cyan]4[/cyan] Ver correlaciones")
     console.print("  [cyan]5[/cyan] Ver gráficas (evolución, drawdown, retornos)")
-    console.print("  [cyan]6[/cyan] Cambiar período de análisis")
+    console.print("  [cyan]6[/cyan] Simulación Monte Carlo")
+    console.print("  [cyan]7[/cyan] Cambiar período de análisis")
     console.print("  [cyan]q[/cyan] Salir")
-    return Prompt.ask("\nOpción", choices=["1","2","3","4","5","6","q"], default="1")
+    return Prompt.ask("\nOpción", choices=["1","2","3","4","5","6","7","q"], default="1")
 
 
 def pedir_nuevos_pesos(tickers: list) -> dict:
@@ -246,6 +248,31 @@ def main():
             graficar_portafolio(retornos_graf, portafolio["pesos"])
 
         elif opcion == "6":
+            capital = FloatPrompt.ask("\nCapital a invertir (USD)", default=10000.0)
+            anos = FloatPrompt.ask("¿Cuántos años simular?", default=1.0)
+            dias_sim = int(anos * 252)
+            n_sim = 1000
+
+            console.print(f"\n[dim]Corriendo {n_sim:,} simulaciones para {dias_sim} días...[/dim]")
+            r_port = retornos[list(portafolio["pesos"].keys())].dropna() @ \
+                     list(portafolio["pesos"].values())
+
+            trayectorias = simular_montecarlo(r_port, capital_inicial=capital,
+                                              dias=dias_sim, n_simulaciones=n_sim)
+            stats = estadisticas_montecarlo(trayectorias)
+
+            console.print(f"\n[bold]Resultados tras {dias_sim} días ({anos:.0f} año(s)):[/bold]")
+            console.print(f"  Escenario optimista  (P95): [green]${stats['p95']:>10,.0f}[/green]  ({stats['p95']/capital-1:+.1%})")
+            console.print(f"  Escenario probable   (P50): [cyan]${stats['p50']:>10,.0f}[/cyan]  ({stats['p50']/capital-1:+.1%})")
+            console.print(f"  Escenario pesimista  (P05): [red]${stats['p05']:>10,.0f}[/red]  ({stats['p05']/capital-1:+.1%})")
+            console.print(f"\n  Probabilidad de ganancia : [green]{stats['prob_ganancia']:.1%}[/green]")
+            console.print(f"  Probabilidad de perder >20%: [red]{stats['prob_perdida_20']:.1%}[/red]")
+
+            ver_grafica = Prompt.ask("\n¿Ver gráfica?", choices=["s","n"], default="s")
+            if ver_grafica == "s":
+                graficar_montecarlo(trayectorias, stats)
+
+        elif opcion == "7":
             periodo = Prompt.ask("Período", choices=["1y","2y","5y","10y","max"], default="2y")
             portafolio["periodo"] = periodo
             console.print(f"[green]Período cambiado a {periodo}.[/green]")
