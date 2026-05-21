@@ -28,6 +28,7 @@ from modulos.metricas import (
 from modulos.montecarlo import simular_montecarlo, estadisticas_montecarlo
 from modulos.optimizador import optimizar_sharpe, frontera_eficiente
 from modulos.datos import descargar_precios, calcular_retornos_diarios
+import yfinance as yf
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -121,6 +122,21 @@ def _montecarlo(periodo: str, capital: int, dias: int, n_sim: int):
     return tray_act, tray_sug, pw_act, pw_sug, activos, ret_df
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _descargar_ticker(ticker: str, periodo: str) -> pd.Series | None:
+    """Descarga precios de cierre para un ticker individual. Cacheado por ticker+periodo."""
+    try:
+        data = yf.download(ticker, period=periodo, auto_adjust=True, progress=False)
+        if data.empty or len(data) < 30:
+            return None
+        close = data["Close"]
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:, 0]
+        return close.dropna()
+    except Exception:
+        return None
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 
 with st.sidebar:
@@ -139,11 +155,12 @@ portafolio = cargar_portafolio()
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Mi Portafolio",
     "🔍 Opciones de Inversión",
     "🎲 Monte Carlo",
     "⚙️ Optimizador Markowitz",
+    "🧪 Explorador",
 ])
 
 
@@ -574,3 +591,332 @@ with tab4:
                 "El borde superior-izquierdo es la frontera eficiente: "
                 "mayor retorno para el mismo riesgo."
             )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 5 — Explorador de combinaciones
+# ═════════════════════════════════════════════════════════════════════════════
+
+with tab5:
+    st.header("Explorador de Portafolios")
+    st.caption("Combina activos libremente, ajusta los pesos y ve Sharpe, riesgo/retorno y Monte Carlo en tiempo real.")
+
+    # ── Session state ─────────────────────────────────────────────────────────
+    if "exp_custom" not in st.session_state:
+        st.session_state.exp_custom = {}   # {ticker: nombre_display}
+
+    # ── Catálogo desde el JSON ────────────────────────────────────────────────
+    catalogo: dict[str, str] = {}
+    for _a in portafolio.get("activos", []):
+        if _a.get("ticker_yfinance"):
+            catalogo[_a["ticker_yfinance"]] = _a["nombre_corto"]
+    for _op in portafolio.get("opciones_inversion", []):
+        if _op.get("ticker_yfinance"):
+            catalogo[_op["ticker_yfinance"]] = _op["nombre_corto"]
+    for _alt in portafolio.get("alternativas_sugeridas", []):
+        if _alt.get("ticker_yfinance"):
+            catalogo[_alt["ticker_yfinance"]] = _alt["nombre_corto"]
+
+    # ── Layout ────────────────────────────────────────────────────────────────
+    ctrl_col, res_col = st.columns([1, 2], gap="large")
+
+    with ctrl_col:
+        # 1. Selección desde catálogo
+        st.subheader("1. Seleccionar activos")
+        sel_catalogo = st.multiselect(
+            "Tus opciones (TRii / alternativas)",
+            options=list(catalogo.keys()),
+            format_func=lambda tk: f"{catalogo[tk]}  ({tk})",
+            placeholder="Escribe o selecciona...",
+            key="exp_sel_catalogo",
+        )
+
+        # 2. Buscar ticker libre
+        st.caption("O busca cualquier ticker del mundo:")
+        inp_col, btn_col = st.columns([3, 1])
+        with inp_col:
+            nuevo_tk = st.text_input(
+                "Ticker", key="exp_nuevo_tk",
+                label_visibility="collapsed",
+                placeholder="NVDA, MSFT, AMZN...",
+            )
+        with btn_col:
+            if st.button("Añadir", key="exp_btn_add"):
+                tk_upper = nuevo_tk.strip().upper()
+                if tk_upper:
+                    if tk_upper in catalogo or tk_upper in st.session_state.exp_custom:
+                        st.warning(f"{tk_upper} ya está en la lista.")
+                    else:
+                        with st.spinner(f"Buscando {tk_upper}..."):
+                            _serie_test = _descargar_ticker(tk_upper, "1y")
+                        if _serie_test is not None:
+                            st.session_state.exp_custom[tk_upper] = tk_upper
+                            st.success(f"{tk_upper} añadido.")
+                        else:
+                            st.error(f"{tk_upper}: sin datos en Yahoo Finance.")
+
+        # Mostrar personalizados con botón de quitar
+        if st.session_state.exp_custom:
+            st.caption("Personalizados añadidos:")
+            _to_del = []
+            for _tk in list(st.session_state.exp_custom):
+                _c1, _c2 = st.columns([4, 1])
+                _c1.markdown(f"`{_tk}`")
+                if _c2.button("✕", key=f"exp_rm_{_tk}"):
+                    _to_del.append(_tk)
+            for _tk in _to_del:
+                del st.session_state.exp_custom[_tk]
+                st.rerun()
+
+        # Todos los seleccionados
+        todos_sel: dict[str, str] = {tk: catalogo[tk] for tk in sel_catalogo}
+        todos_sel.update(st.session_state.exp_custom)
+
+        st.divider()
+
+        # 3. Período
+        exp_periodo = st.selectbox(
+            "Período histórico", ["6mo", "1y", "2y", "5y"],
+            index=2, key="exp_periodo",
+        )
+
+        # 4. Pesos
+        pesos: dict[str, int] = {}
+        total_peso = 0
+
+        if todos_sel:
+            st.subheader("2. Pesos (%)")
+            b1, b2 = st.columns(2)
+            igualar_btn = b1.button("Igualar pesos", key="exp_igualar")
+            limpiar_btn = b2.button("Limpiar todo",  key="exp_limpiar")
+
+            if limpiar_btn:
+                st.session_state.exp_custom = {}
+                st.rerun()
+
+            n_sel = len(todos_sel)
+            peso_base = 100 // n_sel
+
+            for i, (tk, nombre) in enumerate(todos_sel.items()):
+                default_w = peso_base + (100 - peso_base * n_sel if i == 0 else 0)
+                label = f"{nombre[:20]} ({tk})" if nombre != tk else tk
+                pesos[tk] = st.slider(
+                    label, 0, 100,
+                    value=default_w if igualar_btn else default_w,
+                    step=5, key=f"exp_w_{tk}",
+                )
+                total_peso += pesos[tk]
+
+            # Indicador de suma
+            if abs(total_peso - 100) < 1:
+                st.success(f"Total: {total_peso}%  ✓")
+            else:
+                st.warning(f"Total: {total_peso}%  — ajusta a 100% para ver el combo")
+        else:
+            st.info("Selecciona al menos un activo arriba.")
+
+    # ── Panel de resultados ───────────────────────────────────────────────────
+    with res_col:
+        if not todos_sel:
+            st.markdown(
+                """
+                ### ¿Cómo usar el Explorador?
+                1. **Selecciona activos** del catálogo (tus opciones TRii) o añade cualquier ticker.
+                2. **Ajusta los pesos** (deben sumar 100%).
+                3. Verás automáticamente: Sharpe, retorno, volatilidad, drawdown por activo
+                   y métricas del portafolio combinado.
+                4. Activa **Monte Carlo** para proyectar escenarios futuros.
+                """
+            )
+        else:
+            # Descargar series para cada ticker seleccionado
+            series: dict[str, pd.Series] = {}
+            sin_datos: list[str] = []
+            for tk in todos_sel:
+                with st.spinner(f"Cargando {tk}..."):
+                    _s = _descargar_ticker(tk, exp_periodo)
+                if _s is not None:
+                    series[tk] = _s
+                else:
+                    sin_datos.append(tk)
+
+            if sin_datos:
+                st.warning(f"Sin datos en Yahoo Finance para: {', '.join(sin_datos)}")
+
+            if not series:
+                st.error("No se pudo cargar ningún activo. Verifica los tickers.")
+            else:
+                tickers_ok = list(series.keys())
+                df_p = pd.DataFrame(series).dropna(how="all").ffill()
+                df_r = np.log(df_p / df_p.shift(1)).dropna(how="all")
+
+                # ── Tabla de métricas individuales ────────────────────────────
+                filas_ind = []
+                for tk in tickers_ok:
+                    s   = df_r[tk].dropna()
+                    ret = retorno_anualizado(s)
+                    vol = volatilidad_anualizada(s)
+                    sh  = sharpe_ratio(s)
+                    dd  = float(((df_p[tk] / df_p[tk].cummax()) - 1).min())
+                    filas_ind.append({
+                        "Activo":      todos_sel.get(tk, tk)[:24],
+                        "Ticker":      tk,
+                        "Peso %":      pesos.get(tk, 0),
+                        "Ret.Anual":   ret,
+                        "Volatilidad": vol,
+                        "Sharpe":      sh,
+                        "Max DD":      dd,
+                    })
+
+                df_ind = pd.DataFrame(filas_ind)
+                df_disp = df_ind.copy()
+                df_disp["Ret.Anual"]   = df_disp["Ret.Anual"].map(lambda x: f"{x:+.1%}")
+                df_disp["Volatilidad"] = df_disp["Volatilidad"].map(lambda x: f"{x:.1%}")
+                df_disp["Sharpe"]      = df_disp["Sharpe"].map(lambda x: f"{x:.2f}")
+                df_disp["Max DD"]      = df_disp["Max DD"].map(lambda x: f"{x:.1%}")
+                st.dataframe(df_disp, use_container_width=True, hide_index=True)
+
+                # ── Scatter riesgo / retorno ──────────────────────────────────
+                PALETA = ["#00d4ff", "#ffaa00", "#aa88ff", "#ff8844",
+                          "#00ff88", "#00a8cc", "#ff6666", "#88ffaa"]
+                fig_sc = go.Figure()
+                for i, row in df_ind.iterrows():
+                    color_dot = PALETA[i % len(PALETA)]
+                    fig_sc.add_trace(go.Scatter(
+                        x=[row["Volatilidad"]], y=[row["Ret.Anual"]],
+                        mode="markers+text",
+                        marker=dict(size=18, color=color_dot,
+                                    line=dict(width=1.5, color="white")),
+                        text=[row["Ticker"]],
+                        textposition="top center",
+                        textfont=dict(color=color_dot, size=11),
+                        name=row["Ticker"], showlegend=True,
+                    ))
+
+                # ── Portafolio combinado (si pesos ≈ 100%) ───────────────────
+                pesos_arr = np.array([pesos.get(tk, 0) for tk in tickers_ok], dtype=float)
+                combo_valido = abs(total_peso - 100) < 2 and total_peso > 0
+
+                if combo_valido:
+                    pesos_norm = pesos_arr / pesos_arr.sum()
+                    r_port = (df_r[tickers_ok] @ pesos_norm).dropna()
+                    ret_p  = retorno_anualizado(r_port)
+                    vol_p  = volatilidad_anualizada(r_port)
+                    sh_p   = sharpe_ratio(r_port)
+                    dd_p   = float(((1 + r_port).cumprod()
+                                    .pipe(lambda p: (p - p.cummax()) / p.cummax())).min())
+
+                    # Punto estrella del combo en scatter
+                    fig_sc.add_trace(go.Scatter(
+                        x=[vol_p], y=[ret_p],
+                        mode="markers+text",
+                        marker=dict(size=26, color="#00ff88", symbol="star",
+                                    line=dict(width=2, color="white")),
+                        text=["COMBO"], textposition="top right",
+                        textfont=dict(color="#00ff88", size=13),
+                        name="Portafolio combinado", showlegend=True,
+                    ))
+
+                    # Métricas del combo
+                    st.divider()
+                    st.subheader("Portafolio combinado")
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Sharpe", f"{sh_p:.2f}",
+                              help="Sharpe > 1 = bueno, > 2 = excelente")
+                    m2.metric("Retorno anual", f"{ret_p:+.1%}")
+                    m3.metric("Volatilidad", f"{vol_p:.1%}")
+                    m4.metric("Max Drawdown", f"{dd_p:.1%}")
+
+                fig_sc.update_layout(
+                    **_LAYOUT_BASE,
+                    title="Riesgo vs Retorno por activo",
+                    xaxis=dict(title="Volatilidad anual", tickformat=".0%",
+                               color="gray", gridcolor="#2e3148"),
+                    yaxis=dict(title="Retorno anual", tickformat=".0%",
+                               color="gray", gridcolor="#2e3148"),
+                    height=380,
+                )
+                st.plotly_chart(fig_sc, use_container_width=True)
+
+                # ── Gráficas secundarias (pie + correlaciones) ────────────────
+                if combo_valido and len(tickers_ok) > 1:
+                    pie_col2, corr_col2 = st.columns(2)
+
+                    with pie_col2:
+                        fig_pie2 = go.Figure(go.Pie(
+                            labels=tickers_ok,
+                            values=[pesos.get(tk, 0) for tk in tickers_ok],
+                            hole=0.45,
+                            marker_colors=PALETA[:len(tickers_ok)],
+                            textinfo="label+percent",
+                        ))
+                        fig_pie2.update_layout(
+                            **_LAYOUT_BASE,
+                            title="Distribución de pesos",
+                            showlegend=False,
+                            margin=dict(t=45, b=5, l=5, r=5),
+                            height=300,
+                        )
+                        st.plotly_chart(fig_pie2, use_container_width=True)
+
+                    with corr_col2:
+                        corr_m = df_r[tickers_ok].corr()
+                        fig_corr = px.imshow(
+                            corr_m, text_auto=".2f",
+                            color_continuous_scale="RdBu_r",
+                            zmin=-1, zmax=1,
+                            title="Correlaciones",
+                        )
+                        fig_corr.update_layout(
+                            **_LAYOUT_BASE, height=300,
+                            margin=dict(t=45, b=5, l=5, r=5),
+                            coloraxis_showscale=False,
+                            xaxis=dict(color="gray"),
+                            yaxis=dict(color="gray"),
+                        )
+                        st.plotly_chart(fig_corr, use_container_width=True)
+                    st.caption(
+                        "Correlación cerca de 0 (azul) = activos se mueven independiente = mejor diversificación. "
+                        "Cerca de 1 (rojo) = se mueven igual."
+                    )
+
+                # ── Monte Carlo del combo ─────────────────────────────────────
+                if combo_valido:
+                    st.divider()
+                    st.subheader("Monte Carlo — proyección de la combinación")
+                    mc2_col1, mc2_col2, mc2_col3 = st.columns([2, 1, 1])
+                    with mc2_col1:
+                        cap_exp = st.number_input(
+                            "Capital inicial (COP)", value=207_945,
+                            step=50_000, format="%d", key="exp_cap",
+                        )
+                    with mc2_col2:
+                        anos_exp = st.slider("Años", 1, 5, 2, key="exp_anos")
+                    with mc2_col3:
+                        nsim_exp = st.select_slider(
+                            "Simulaciones", [500, 1000, 2000], value=500, key="exp_nsim",
+                        )
+
+                    if st.button("Simular", key="exp_mc_btn", type="primary"):
+                        dias_exp = int(anos_exp * 252)
+                        tray_exp = simular_montecarlo(
+                            r_port, int(cap_exp), dias_exp, nsim_exp, semilla=42,
+                        )
+                        st_exp = estadisticas_montecarlo(tray_exp)
+
+                        e1, e2, e3, e4 = st.columns(4)
+                        e1.metric("P5 — pesimista",
+                                  f"${st_exp['p05']:,.0f}",
+                                  f"{st_exp['p05']/cap_exp - 1:+.1%}")
+                        e2.metric("P50 — probable",
+                                  f"${st_exp['p50']:,.0f}",
+                                  f"{st_exp['p50']/cap_exp - 1:+.1%}")
+                        e3.metric("P95 — optimista",
+                                  f"${st_exp['p95']:,.0f}",
+                                  f"{st_exp['p95']/cap_exp - 1:+.1%}")
+                        e4.metric("Prob. ganancia", f"{st_exp['prob_ganancia']:.1%}")
+
+                        st.plotly_chart(
+                            _mc_chart(tray_exp, "Combinación", "#aa88ff", cap_exp),
+                            use_container_width=True,
+                        )
