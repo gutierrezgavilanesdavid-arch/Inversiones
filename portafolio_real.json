@@ -1,7 +1,6 @@
 {
   "nombre": "Portafolio David — TRii / AVC / Binance",
   "moneda_base": "COP",
-
   "activos": [
     {
       "id": "FONDO_MAYOR",
@@ -42,10 +41,8 @@
       "nota": "Proxy: IEMG (NYSE) — misma exposicion Emerging Markets"
     }
   ],
-
   "disponible_cop": 207945,
   "comision_por_transaccion_cop": 14500,
-
   "opciones_inversion": [
     {
       "id": "RBOTCO",
@@ -55,6 +52,15 @@
       "tipo": "etf",
       "ticker_yfinance": "BOTZ",
       "nota": "Proxy: BOTZ (Global X Robotics & AI ETF)"
+    },
+    {
+      "id": "ECLCO",
+      "nombre_corto": "ECLCO | ENGIE energia chile",
+      "nombre_largo": "ENGIE energia chile S.A",
+      "precio_cop": 7660,
+      "tipo": "accion_extranjera",
+      "ticker_yfinance": "ECL.SN",
+      "nota": "Representacion ENGIE en chile ENERGIA alter"
     },
     {
       "id": "IUITCO",
@@ -129,7 +135,6 @@
       "nota": "Accion preferencial BVC — sin datos en yfinance"
     }
   ],
-
   "alternativas_sugeridas": [
     {
       "id": "QQQ",
